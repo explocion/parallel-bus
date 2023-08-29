@@ -42,7 +42,7 @@ where
     fn into_output_bus(self) -> Result<TOutput, Self::IntoOutputError>;
 }
 
-pub trait BidirectionBus<TInput, TOutput>: IoBus<TInput, TOutput>
+pub trait IoBusMux<TInput, TOutput>: IoBus<TInput, TOutput>
 where
     TInput: InputBus + IoBus<TInput, TOutput>,
     TOutput: OutputBus + IoBus<TInput, TOutput>,
@@ -54,7 +54,7 @@ where
 }
 
 #[derive(Debug)]
-pub enum DirectedBusEnum<TInput, TOutput>
+pub enum DirectedBus<TInput, TOutput>
 where
     TInput: InputBus + IoBus<TInput, TOutput>,
     TOutput: OutputBus + IoBus<TInput, TOutput>,
@@ -65,7 +65,7 @@ where
     OutputBus(TOutput),
 }
 
-impl<TInput, TOutput> ParallelBus for DirectedBusEnum<TInput, TOutput>
+impl<TInput, TOutput> ParallelBus for DirectedBus<TInput, TOutput>
 where
     TInput: InputBus + IoBus<TInput, TOutput>,
     TOutput: OutputBus + IoBus<TInput, TOutput>,
@@ -75,7 +75,7 @@ where
     type BusWidth = <TInput as ParallelBus>::BusWidth;
 }
 
-impl<TInput, TOutput> IoBus<TInput, TOutput> for DirectedBusEnum<TInput, TOutput>
+impl<TInput, TOutput> IoBus<TInput, TOutput> for DirectedBus<TInput, TOutput>
 where
     TInput: InputBus + IoBus<TInput, TOutput>,
     TOutput: OutputBus + IoBus<TInput, TOutput>,
@@ -101,27 +101,14 @@ where
 }
 
 #[derive(Debug)]
-pub struct DirectedBus<TInput, TOutput>(Option<DirectedBusEnum<TInput, TOutput>>)
+pub struct MuxedIoBus<TInput, TOutput>(Option<DirectedBus<TInput, TOutput>>)
 where
     TInput: InputBus + IoBus<TInput, TOutput>,
     TOutput: OutputBus + IoBus<TInput, TOutput>,
     <TInput as ParallelBus>::BusWidth: Same<<TOutput as ParallelBus>::BusWidth>,
     <TOutput as ParallelBus>::BusWidth: Same<<TInput as ParallelBus>::BusWidth>;
 
-impl<TInput, TOutput> From<DirectedBusEnum<TInput, TOutput>> for DirectedBus<TInput, TOutput>
-where
-    TInput: InputBus + IoBus<TInput, TOutput>,
-    TOutput: OutputBus + IoBus<TInput, TOutput>,
-    <TInput as ParallelBus>::BusWidth: Same<<TOutput as ParallelBus>::BusWidth>,
-    <TOutput as ParallelBus>::BusWidth: Same<<TInput as ParallelBus>::BusWidth>,
-{
-    #[inline]
-    fn from(value: DirectedBusEnum<TInput, TOutput>) -> Self {
-        Self(Some(value))
-    }
-}
-
-impl<TInput, TOutput> From<DirectedBus<TInput, TOutput>> for DirectedBusEnum<TInput, TOutput>
+impl<TInput, TOutput> From<DirectedBus<TInput, TOutput>> for MuxedIoBus<TInput, TOutput>
 where
     TInput: InputBus + IoBus<TInput, TOutput>,
     TOutput: OutputBus + IoBus<TInput, TOutput>,
@@ -130,21 +117,34 @@ where
 {
     #[inline]
     fn from(value: DirectedBus<TInput, TOutput>) -> Self {
-        value.0.unwrap()
+        Self(Some(value))
     }
 }
 
-impl<TInput, TOutput> ParallelBus for DirectedBus<TInput, TOutput>
+impl<TInput, TOutput> From<MuxedIoBus<TInput, TOutput>> for DirectedBus<TInput, TOutput>
 where
     TInput: InputBus + IoBus<TInput, TOutput>,
     TOutput: OutputBus + IoBus<TInput, TOutput>,
     <TInput as ParallelBus>::BusWidth: Same<<TOutput as ParallelBus>::BusWidth>,
     <TOutput as ParallelBus>::BusWidth: Same<<TInput as ParallelBus>::BusWidth>,
 {
-    type BusWidth = <DirectedBusEnum<TInput, TOutput> as ParallelBus>::BusWidth;
+    #[inline]
+    fn from(value: MuxedIoBus<TInput, TOutput>) -> Self {
+        value.0.unwrap()
+    }
 }
 
-impl<TInput, TOutput> IoBus<TInput, TOutput> for DirectedBus<TInput, TOutput>
+impl<TInput, TOutput> ParallelBus for MuxedIoBus<TInput, TOutput>
+where
+    TInput: InputBus + IoBus<TInput, TOutput>,
+    TOutput: OutputBus + IoBus<TInput, TOutput>,
+    <TInput as ParallelBus>::BusWidth: Same<<TOutput as ParallelBus>::BusWidth>,
+    <TOutput as ParallelBus>::BusWidth: Same<<TInput as ParallelBus>::BusWidth>,
+{
+    type BusWidth = <DirectedBus<TInput, TOutput> as ParallelBus>::BusWidth;
+}
+
+impl<TInput, TOutput> IoBus<TInput, TOutput> for MuxedIoBus<TInput, TOutput>
 where
     TInput: InputBus + IoBus<TInput, TOutput>,
     TOutput: OutputBus + IoBus<TInput, TOutput>,
@@ -165,7 +165,7 @@ where
     }
 }
 
-impl<TInput, TOutput> BidirectionBus<TInput, TOutput> for DirectedBus<TInput, TOutput>
+impl<TInput, TOutput> IoBusMux<TInput, TOutput> for MuxedIoBus<TInput, TOutput>
 where
     TInput: InputBus + IoBus<TInput, TOutput>,
     TOutput: OutputBus + IoBus<TInput, TOutput>,
@@ -174,18 +174,18 @@ where
 {
     fn switch_to_input_bus(&mut self) -> Result<&TInput, Self::IntoInputError> {
         let bus = self.0.take().unwrap();
-        self.0 = Some(DirectedBusEnum::InputBus(bus.into_input_bus()?));
+        self.0 = Some(DirectedBus::InputBus(bus.into_input_bus()?));
         match self.0.as_ref().unwrap() {
-            DirectedBusEnum::InputBus(bus) => Ok(bus),
+            DirectedBus::InputBus(bus) => Ok(bus),
             _ => panic!(),
         }
     }
 
     fn switch_to_output_bus(&mut self) -> Result<&mut TOutput, Self::IntoOutputError> {
         let bus = self.0.take().unwrap();
-        self.0 = Some(DirectedBusEnum::OutputBus(bus.into_output_bus()?));
+        self.0 = Some(DirectedBus::OutputBus(bus.into_output_bus()?));
         match self.0.as_mut().unwrap() {
-            DirectedBusEnum::OutputBus(bus) => Ok(bus),
+            DirectedBus::OutputBus(bus) => Ok(bus),
             _ => panic!(),
         }
     }
