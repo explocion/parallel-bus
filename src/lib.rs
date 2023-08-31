@@ -25,7 +25,7 @@ pub trait OutputBus: ParallelBus {
     type Error: fmt::Debug;
     fn write_bus(
         &mut self,
-        states: &GenericArray<PinState, Self::BusWidth>,
+        states: GenericArray<PinState, Self::BusWidth>,
     ) -> Result<(), Self::Error>;
 }
 
